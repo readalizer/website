@@ -1,0 +1,3835 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Readalizer Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="hero" id="overview">
+      <div class="hero-content">
+        <p class="eyebrow">Readalizer Documentation</p>
+        <h1>Readable PHP, enforced.</h1>
+        <p class="lead">Readalizer is a PHP static analysis tool that enforces readability standards via AST analysis. Configure your rules, run the CLI, and get actionable violations with consistent formatting.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#getting-started">Get Started</a>
+          <a class="button secondary" href="#rules">Browse Rules</a>
+        </div>
+        <div class="hero-meta">
+          <div><strong>Current release:</strong> 1.0.0 (2026-02-22)</div>
+          <div><strong>PHP:</strong> 8.1+</div>
+          <div><strong>Config file:</strong> <code>readalizer.php</code></div>
+        </div>
+      </div>
+      <div class="hero-panel">
+        <pre><code class="language-bash">composer require readalizer/readalizer
+vendor/bin/readalizer --init
+vendor/bin/readalizer src/</code></pre>
+        <div class="panel-note">CLI uses <code>readalizer.php</code> when no paths are provided.</div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Docs navigation">
+        <div class="sidebar-title">Contents</div>
+        <a href="#getting-started">Getting Started</a>
+        <a href="#installation">Installation</a>
+        <a href="#quick-start">Quick Start</a>
+        <a href="#cli">CLI</a>
+        <a href="#configuration">Configuration</a>
+        <a href="#rulesets">Rulesets</a>
+        <a href="#rules">Rules</a>
+        <a href="#suppression">Suppression</a>
+        <a href="#parallel">Parallel Execution</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#development">Development</a>
+      </nav>
+
+      <main>
+        <section id="getting-started">
+          <h2>Getting Started</h2>
+          <p>Readalizer scans PHP source files, parses them into an AST, and runs configured readability rules. The CLI exits with <code>1</code> when violations are found, so it works cleanly in CI or git hooks.</p>
+        </section>
+
+        <section id="installation">
+          <h2>Installation</h2>
+          <pre><code class="language-bash">composer require readalizer/readalizer</code></pre>
+          <p>Readalizer is distributed as a Composer package. The CLI entrypoint is <code>vendor/bin/readalizer</code>.</p>
+        </section>
+
+        <section id="quick-start">
+          <h2>Quick Start</h2>
+          <pre><code class="language-bash">vendor/bin/readalizer --init
+vendor/bin/readalizer
+vendor/bin/readalizer src/ lib/</code></pre>
+          <p>When no paths are provided, Readalizer uses the <code>paths</code> array from <code>readalizer.php</code>. Use <code>--init</code> to generate the config scaffold.</p>
+          <pre><code class="language-bash">vendor/bin/readalizer --init</code></pre>
+        </section>
+
+        <section id="cli">
+          <h2>CLI</h2>
+          <p>Primary options wired into runtime behavior:</p>
+          <pre><code class="language-bash">vendor/bin/readalizer --config=path/to/readalizer.php
+vendor/bin/readalizer --jobs=4 --memory-limit=2G
+vendor/bin/readalizer --progress
+vendor/bin/readalizer --debug</code></pre>
+          <p>Exit codes:</p>
+          <div class="key-value">
+            <div><strong>0</strong> — No violations</div>
+            <div><strong>1</strong> — Violations detected</div>
+          </div>
+          <p>The CLI help lists additional options (<code>--format</code>, <code>--cache</code>, <code>--baseline</code>, <code>--max-violations</code>) that are parsed but not yet enforced in runtime. If you plan to implement them, start in <code>src/Command/AnalyseCommand.php</code>, <code>src/Config/ConfigurationLoader.php</code>, and <code>src/Analysis/Analyser.php</code>.</p>
+        </section>
+
+        <section id="configuration">
+          <h2>Configuration</h2>
+          <p>Readalizer loads configuration from a PHP file that returns an array. Use <code>--config</code> to point to a different file.</p>
+          <pre><code class="language-php"><?php
+
+use Readalizer\Readalizer\Rules\NoLongMethodsRule;
+use Readalizer\Readalizer\Rulesets\DefaultRuleset;
+use Readalizer\Readalizer\Rules\LineLengthRule;
+
+return [
+    'paths' => ['src/', 'app/'],
+    'ignore' => ['vendor/', 'var/'],
+    'memory_limit' => '2G',
+    'ruleset' => [new DefaultRuleset()],
+    'rules' => [
+        new NoLongMethodsRule(maxLines: 30),
+        new LineLengthRule(maxLength: 120),
+    ],
+    'cache' => [
+        'enabled' => true,
+        'path' => '.readalizer-cache.json',
+    ],
+    'baseline' => '.readalizer-baseline.json',
+    'max_violations' => 5000,
+];</code></pre>
+          <div class="key-value">
+            <div><strong>paths</strong> — Default paths when CLI paths are omitted.</div>
+            <div><strong>ignore</strong> — Path prefixes or globs to skip.</div>
+            <div><strong>rules</strong> — Rule instances applied directly.</div>
+            <div><strong>ruleset</strong> — Ruleset bundles expanded into rules.</div>
+            <div><strong>memory_limit</strong> — Default memory limit, overridden by <code>--memory-limit</code>.</div>
+            <div><strong>cache</strong>, <strong>baseline</strong>, <strong>max_violations</strong> — Parsed but not yet enforced.</div>
+          </div>
+        </section>
+
+        <section id="rulesets">
+          <h2>Rulesets</h2>
+          <p>The <strong>DefaultRuleset</strong> merges six focused rulesets. You can enable the default set or compose your own.</p>
+          <div class="ruleset-grid">
+            <div class="ruleset-card">
+              <h3>File Structure</h3>
+              <p>Strict file layout, namespaces, and line hygiene.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+            <div class="ruleset-card">
+              <h3>Type Safety</h3>
+              <p>Explicit types, typed properties, and iterable value annotations.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+            <div class="ruleset-card">
+              <h3>Class Design</h3>
+              <p>Encapsulation, immutability, and class size constraints.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+            <div class="ruleset-card">
+              <h3>Method Design</h3>
+              <p>Small methods, clean parameters, and readable control flow.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+            <div class="ruleset-card">
+              <h3>Naming</h3>
+              <p>Predictable naming conventions and disallowed suffixes.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+            <div class="ruleset-card">
+              <h3>Expressions</h3>
+              <p>Readable boolean logic, conditionals, and error handling.</p>
+              <p class="ruleset-links"><a href="#rules">View rules</a></p>
+            </div>
+          </div>
+          <p>You can combine rulesets and individual rules in the config file. Rulesets live in <code>src/Rulesets/</code> and rules in <code>src/Rules/</code>.</p>
+        </section>
+
+        <section id="rules">
+          <h2>Rules</h2>
+          <p>Each rule includes enforcement, rationale, examples, and configuration details. Use the search box to filter by name or description.</p>
+          <div class="rule-search">
+            <input id="rule-filter" type="search" placeholder="Filter rules (e.g. namespace, ternary, maxLines)" autocomplete="off">
+            <div class="rule-count" id="rule-count"></div>
+          </div>
+          <section class="ruleset" data-ruleset="FileStructureRuleset">
+  <h3>File Structure Ruleset</h3>
+  <p class="ruleset-desc">File-level conventions that keep files predictable, declarative, and consistent.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-StrictTypesDeclarationRule" data-search="stricttypesdeclarationrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">StrictTypesDeclarationRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Every PHP file must include declare(strict_types=1).</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Strict typing makes type errors fail fast and improves static analysis.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+namespace App;
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireNamespaceRule" data-search="requirenamespacerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">RequireNamespaceRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Files declaring symbols must live in a namespace.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Namespaces prevent name collisions and make autoloading predictable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+namespace App;
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireNamespaceDeclarationFirstRule" data-search="requirenamespacedeclarationfirstrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">RequireNamespaceDeclarationFirstRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Namespace declaration must be the first statement after declare.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Keeping namespace first avoids confusion and keeps file structure consistent.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+use App\Foo;
+
+namespace App;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+namespace App;
+
+use App\Foo;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-SingleNamespacePerFileRule" data-search="singlenamespaceperfilerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">SingleNamespacePerFileRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Only one namespace declaration is allowed per file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Single namespaces keep file intent focused and autoloading clear.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class A {}
+
+namespace App\Support;
+
+class B {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class A {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-SingleClassPerFileRule" data-search="singleclassperfilerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">SingleClassPerFileRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Only one class/interface/trait is allowed per file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>One class per file makes discovery and autoloading predictable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class A {}
+
+class B {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class A {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMultipleClassesWithSameNameRule" data-search="nomultipleclasseswithsamenamerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoMultipleClassesWithSameNameRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows multiple types with the same name in one file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Duplicate names in a file create ambiguity and fragile behavior.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class User {}
+
+class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoExecutableCodeInFilesRule" data-search="noexecutablecodeinfilesrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoExecutableCodeInFilesRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows executable top-level code; declarations only.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Top-level execution makes files harder to reason about and test.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+$booted = true;
+
+class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-FileLengthRule" data-search="filelengthrule file structure ruleset file rule file maxlines: 400">
+      <summary>
+        <span class="rule-name">FileLengthRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: maxLines: 400</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Files must not exceed a maximum line count.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Smaller files are easier to review and maintain.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// file length exceeds the configured max
+// (example omitted for brevity)</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// split into smaller, focused files</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxLines (default 400 in the default ruleset).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-LineLengthRule" data-search="linelengthrule file structure ruleset file rule file maxlength: 120">
+      <summary>
+        <span class="rule-name">LineLengthRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: maxLength: 120</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Lines must not exceed the configured length.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Shorter lines make diffs and reviews easier.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// a single line longer than 120 characters</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// wrap long lines to stay within 120 characters</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxLength (default 120 in the default ruleset).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoTrailingWhitespaceRule" data-search="notrailingwhitespacerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoTrailingWhitespaceRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows trailing whitespace on any line.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Trailing whitespace adds noise to diffs and reviews.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+$foo = &#x27;bar&#x27;; 
+</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+$foo = &#x27;bar&#x27;;
+</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoTrailingBlankLinesRule" data-search="notrailingblanklinesrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoTrailingBlankLinesRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows blank lines at the end of a file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Trailing blank lines create diff noise and inconsistent formatting.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+final class User {}
+
+
+</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+final class User {}
+</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMixedLineEndingsRule" data-search="nomixedlineendingsrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoMixedLineEndingsRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows mixed CRLF and LF line endings in a file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixed line endings cause noisy diffs and tooling issues.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// file contains both CRLF and LF line endings</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// file uses a single line ending style</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoBOMRule" data-search="nobomrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoBOMRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows UTF-8 BOMs in PHP files.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>BOMs can break tooling and introduce hidden characters.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// UTF-8 BOM present at file start</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// file starts with &lt;?php without a BOM</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoPhpCloseTagRule" data-search="nophpclosetagrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoPhpCloseTagRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows closing PHP tags in PHP-only files.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Closing tags can introduce accidental output and whitespace bugs.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+final class User {}
+?&gt;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+final class User {}
+</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMultipleDeclareStrictTypesRule" data-search="nomultipledeclarestricttypesrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoMultipleDeclareStrictTypesRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows multiple strict_types declarations in a file.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Multiple declarations are redundant and confusing.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+declare(strict_types=1);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoInlineDeclareRule" data-search="noinlinedeclarerule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoInlineDeclareRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">declare statements must appear before any other code.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>declare should appear before other code for clarity.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+$foo = &#x27;bar&#x27;;
+
+declare(strict_types=1);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+$foo = &#x27;bar&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMixedPhpHtmlRule" data-search="nomixedphphtmlrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoMixedPhpHtmlRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows mixing HTML and PHP in source files.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixing PHP and HTML obscures responsibilities in libraries.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+echo &#x27;&lt;div&gt;&#x27; . $name . &#x27;&lt;/div&gt;&#x27;;
+?&gt;
+&lt;div&gt;extra html&lt;/div&gt;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+final class Renderer {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireFileDocblockRule" data-search="requirefiledocblockrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">RequireFileDocblockRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Files that declare symbols must include a file-level docblock.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>File docblocks make intent explicit and help tooling.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+/**
+ * User domain model.
+ */
+
+namespace App;
+
+final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoTodoWithoutTicketRule" data-search="notodowithoutticketrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoTodoWithoutTicketRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">TODO comments must include a ticket reference.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Ticketed TODOs are trackable and actionable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// TODO: refactor this</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// TODO: refactor this (JIRA-123)</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoSuppressAllRule" data-search="nosuppressallrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoSuppressAllRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows suppression comments that omit rule names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Blanket suppressions hide real issues.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// @readalizer-suppress
+$foo = &#x27;bar&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// @readalizer-suppress NoLongMethodsRule
+function legacy(): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoGlobalFunctionsRule" data-search="noglobalfunctionsrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoGlobalFunctionsRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows functions in the global namespace.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Global functions are harder to discover and test.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+function helper() {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+final class Helper {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoGlobalConstantsRule" data-search="noglobalconstantsrule file structure ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoGlobalConstantsRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows constants in the global namespace.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> File Structure Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Global constants pollute the global namespace.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+const VERSION = &#x27;1.0.0&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">&lt;?php
+
+namespace App;
+
+final class Version
+{
+    public const VALUE = &#x27;1.0.0&#x27;;
+}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+<section class="ruleset" data-ruleset="TypeSafetyRuleset">
+  <h3>Type Safety Ruleset</h3>
+  <p class="ruleset-desc">Rules that enforce explicit types, avoid mixed, and require precise iterable annotations.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-ReturnTypeRequiredRule" data-search="returntyperequiredrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">ReturnTypeRequiredRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">All functions and methods must declare a return type.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Return types make APIs explicit and safer to consume.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function total($items) { return count($items); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function total(array $items): int { return count($items); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoArrayReturnRule" data-search="noarrayreturnrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoArrayReturnRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows returning raw arrays.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Typed objects are clearer and safer than raw arrays.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function stats(): array { return [&#x27;count&#x27; =&gt; 10]; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function stats(): Stats { return new Stats(count: 10); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-ParameterTypeRequiredRule" data-search="parametertyperequiredrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">ParameterTypeRequiredRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Every parameter must declare an explicit type.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Parameter types prevent ambiguity and improve tooling.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function total($items): int { return count($items); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function total(array $items): int { return count($items); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMixedTypeRule" data-search="nomixedtyperule type safety ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">NoMixedTypeRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows mixed types on parameters, returns, and properties.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixed erodes type safety and makes APIs vague.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function parse(mixed $value): mixed { return $value; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function parse(string $value): ParsedValue { return ParsedValue::from($value); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoUntypedPropertyRule" data-search="nountypedpropertyrule type safety ruleset node rule property none">
+      <summary>
+        <span class="rule-name">NoUntypedPropertyRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">All properties must declare a type.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Typed properties make object state explicit.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public $id; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { public int $id; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMixedDocblockRule" data-search="nomixeddocblockrule type safety ruleset file rule file none">
+      <summary>
+        <span class="rule-name">NoMixedDocblockRule</span>
+        <span class="rule-tags">
+          <span class="tag">File Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows @var/@param/@return annotations with mixed.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> File</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Docblocks should be as specific as code.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">/** @var mixed */
+private $value;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">/** @var string */
+private string $value;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireIterableValueTypeRule" data-search="requireiterablevaluetyperule type safety ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">RequireIterableValueTypeRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Iterable types must include value type annotations.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Iterable value types are critical for static analysis.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">/** @return array */
+function ids(): array { return [1, 2]; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">/** @return array&lt;int&gt; */
+function ids(): array { return [1, 2]; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoNullableMixedRule" data-search="nonullablemixedrule type safety ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">NoNullableMixedRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows ?mixed or mixed|null.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Nullable mixed provides no actionable type information.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function parse(mixed|null $value): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function parse(?string $value): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoUnionWithMixedRule" data-search="nounionwithmixedrule type safety ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">NoUnionWithMixedRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows union types that include mixed.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixed in unions cancels out the rest of the type.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function parse(string|mixed $value): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function parse(string|int $value): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-PreferNullableTypeSyntaxRule" data-search="prefernullabletypesyntaxrule type safety ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">PreferNullableTypeSyntaxRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Prefer ?Type over Type|null.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Nullable syntax is the standard, most readable form.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function name(): string|null { return null; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function name(): ?string { return null; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoVariadicScalarRule" data-search="novariadicscalarrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoVariadicScalarRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows variadic scalar parameters.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Variadic scalars are harder to validate and evolve.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function add(int ...$ids): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function add(array $ids): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireVoidReturnRule" data-search="requirevoidreturnrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">RequireVoidReturnRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">If there is no return value, declare void.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Void clarifies that a function has no return value.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function log(string $msg) { echo $msg; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function log(string $msg): void { echo $msg; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoBoolStringComparisonRule" data-search="noboolstringcomparisonrule type safety ruleset node rule equal, notequal, identical, notidentical none">
+      <summary>
+        <span class="rule-name">NoBoolStringComparisonRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows comparisons between booleans and strings/numbers.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Equal, NotEqual, Identical, NotIdentical</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixed comparisons are error-prone and unclear.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if (true == &#x27;1&#x27;) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if ($flag === true) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoImplicitBoolReturnRule" data-search="noimplicitboolreturnrule type safety ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoImplicitBoolReturnRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Boolean-returning methods must return a value (no bare return).</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Bare returns in boolean methods are ambiguous and hide intent.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function isReady(): bool { return; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function isReady(): bool { return true; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoImplicitStringCastRule" data-search="noimplicitstringcastrule type safety ruleset node rule string_ none">
+      <summary>
+        <span class="rule-name">NoImplicitStringCastRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows explicit string casts.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> String_</div>
+          <div><strong>Ruleset:</strong> Type Safety Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Implicit casts hide intent and formatting rules.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">return (string) $value;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">return $formatter-&gt;format($value);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+<section class="ruleset" data-ruleset="ClassDesignRuleset">
+  <h3>Class Design Ruleset</h3>
+  <p class="ruleset-desc">Rules that enforce focused, immutable, and explicit class design.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-ClassNamePascalCaseRule" data-search="classnamepascalcaserule class design ruleset node rule class_, interface_, trait_ none">
+      <summary>
+        <span class="rule-name">ClassNamePascalCaseRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Class, interface, and trait names must be PascalCase.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_, Interface_, Trait_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>PascalCase is the expected class naming convention in PHP.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class user_profile {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserProfile {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-FinalClassRule" data-search="finalclassrule class design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">FinalClassRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Concrete classes must be declared final.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Final classes reduce accidental inheritance and encourage composition.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">class UserService {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoPublicPropertiesRule" data-search="nopublicpropertiesrule class design ruleset node rule property none">
+      <summary>
+        <span class="rule-name">NoPublicPropertiesRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows public properties.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Public properties make class contracts implicit and mutable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { private string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMutablePublicPropertiesRule" data-search="nomutablepublicpropertiesrule class design ruleset node rule property none">
+      <summary>
+        <span class="rule-name">NoMutablePublicPropertiesRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows public mutable properties.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mutable public state makes behavior hard to reason about.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { public readonly string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoStaticPropertyRule" data-search="nostaticpropertyrule class design ruleset node rule property none">
+      <summary>
+        <span class="rule-name">NoStaticPropertyRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows static properties.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Static state couples code and complicates testing.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class Cache { public static array $items = []; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class Cache { private array $items = []; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoProtectedPropertiesRule" data-search="noprotectedpropertiesrule class design ruleset node rule property none">
+      <summary>
+        <span class="rule-name">NoProtectedPropertiesRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows protected properties.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Protected properties blur class boundaries.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">class Base { protected string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { private string $name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoPublicConstructorRule" data-search="nopublicconstructorrule class design ruleset node rule classmethod none">
+      <summary>
+        <span class="rule-name">NoPublicConstructorRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows public constructors (except internal rules).</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Named constructors make creation intent explicit.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public function __construct() {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { private function __construct() {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-PreferPropertyPromotionRule" data-search="preferpropertypromotionrule class design ruleset node rule classmethod none">
+      <summary>
+        <span class="rule-name">PreferPropertyPromotionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Prefer constructor property promotion for simple assignments.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Property promotion reduces boilerplate and improves readability.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { private string $name; public function __construct(string $name) { $this-&gt;name = $name; } }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { public function __construct(private string $name) {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoStaticMethodsRule" data-search="nostaticmethodsrule class design ruleset node rule classmethod none">
+      <summary>
+        <span class="rule-name">NoStaticMethodsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows static methods except public factories (from/create/make).</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Static methods impede dependency injection and testing.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public static function save(): void {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { public function save(): void {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-PropertyNameCamelCaseRule" data-search="propertynamecamelcaserule class design ruleset node rule property none">
+      <summary>
+        <span class="rule-name">PropertyNameCamelCaseRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Property names must be camelCase.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Property</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>camelCase is the expected property naming convention.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { private string $user_name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { private string $userName; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-ConstantUppercaseRule" data-search="constantuppercaserule class design ruleset node rule classconst, const_ none">
+      <summary>
+        <span class="rule-name">ConstantUppercaseRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Constants must be uppercase with underscores.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassConst, Const_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Uppercase constants are standard and obvious.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public const max_count = 10; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { public const MAX_COUNT = 10; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-ExceptionSuffixRule" data-search="exceptionsuffixrule class design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">ExceptionSuffixRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Exception classes must end with Exception.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Exception suffix makes intent clear in stack traces.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class MissingConfig extends \Exception {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class MissingConfigException extends \Exception {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-MaxClassLengthRule" data-search="maxclasslengthrule class design ruleset node rule class_ maxlines=170">
+      <summary>
+        <span class="rule-name">MaxClassLengthRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxLines=170</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Classes must not exceed a maximum line count.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Smaller classes are easier to maintain.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// class exceeds max line count</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// split class into smaller collaborators</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxLines (default 170).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoGodClassRule" data-search="nogodclassrule class design ruleset node rule class_ maxmethods: 10, maxproperties: 10">
+      <summary>
+        <span class="rule-name">NoGodClassRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxMethods: 10, maxProperties: 10</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits number of methods and properties on a class.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>God classes are difficult to test and evolve.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class OrderService { /* 20 methods and 12 properties */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class OrderService { /* focused methods and properties */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxMethods (default 10), maxProperties (default 10).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoEmptyClassRule" data-search="noemptyclassrule class design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">NoEmptyClassRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows empty classes.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Empty classes add indirection without value.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class Marker {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class Marker { public function describe(): string { return &#x27;...&#x27;; } }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoEmptyTraitRule" data-search="noemptytraitrule class design ruleset node rule trait_ none">
+      <summary>
+        <span class="rule-name">NoEmptyTraitRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows empty traits.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Trait_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Empty traits add indirection without value.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">trait HasSomething {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">trait HasSomething { protected function something(): void {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-SingleResponsibilityClassRule" data-search="singleresponsibilityclassrule class design ruleset node rule class_ maxpublicmethods: 8">
+      <summary>
+        <span class="rule-name">SingleResponsibilityClassRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxPublicMethods: 8</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits number of public methods on a class.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Limiting public methods keeps classes focused.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class UserService { /* 12 public methods */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService { /* &lt;= 8 public methods */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxPublicMethods (default 8).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireImmutableValueObjectRule" data-search="requireimmutablevalueobjectrule class design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">RequireImmutableValueObjectRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Classes that look like value objects must be readonly.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Value objects should be immutable to be safe and predictable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class Money { public int $amount; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final readonly class Money { public function __construct(public int $amount) {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoInheritanceRule" data-search="noinheritancerule class design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">NoInheritanceRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows class inheritance.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Composition is usually clearer and more flexible than inheritance.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">class BaseService {}
+class UserService extends BaseService {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService { private BaseService $base; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoInterfacesOnFinalClassRule" data-search="nointerfacesonfinalclassrule class design ruleset node rule class_ maxinterfaces: 1">
+      <summary>
+        <span class="rule-name">NoInterfacesOnFinalClassRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxInterfaces: 1</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Final classes may implement only a limited number of interfaces.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Class Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Too many interfaces on a final class can signal overreach.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class UserService implements A, B {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService implements A {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxInterfaces (default 1).</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+<section class="ruleset" data-ruleset="MethodDesignRuleset">
+  <h3>Method Design Ruleset</h3>
+  <p class="ruleset-desc">Rules that keep methods small, explicit, and easy to reason about.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-FunctionVerbNameRule" data-search="functionverbnamerule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">FunctionVerbNameRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Function and method names must start with an action verb.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Verb names communicate actions clearly.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function user() {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function loadUser() {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-BooleanMethodPrefixRule" data-search="booleanmethodprefixrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">BooleanMethodPrefixRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Bool methods must start with allowed predicate prefixes.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Predicate prefixes make boolean methods obvious.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function ready(): bool { return true; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function isReady(): bool { return true; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-GetterMustReturnValueRule" data-search="gettermustreturnvaluerule method design ruleset node rule classmethod none">
+      <summary>
+        <span class="rule-name">GetterMustReturnValueRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Getter methods must return a value.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Getters that do not return values are misleading.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function getName(): void { $this-&gt;name = &#x27;x&#x27;; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function getName(): string { return $this-&gt;name; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-ParameterNameNotSingleLetterRule" data-search="parameternamenotsingleletterrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">ParameterNameNotSingleLetterRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Parameters must not be single-letter names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Descriptive names improve readability.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function add(int $x): int { return $x + 1; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function add(int $count): int { return $count + 1; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoHungarianNotationRule" data-search="nohungariannotationrule method design ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">NoHungarianNotationRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows Hungarian notation in method, function, and property names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Hungarian notation adds noise and ages poorly.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function save(string $str_name): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function save(string $name): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoLongMethodsRule" data-search="nolongmethodsrule method design ruleset node rule classmethod maxlines: 30">
+      <summary>
+        <span class="rule-name">NoLongMethodsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxLines: 30</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Methods must not exceed a maximum line count.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Shorter methods are easier to test and understand.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// method body exceeds 30 lines</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// method broken into smaller helpers</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxLines (default 30).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoEmptyMethodRule" data-search="noemptymethodrule method design ruleset node rule classmethod none">
+      <summary>
+        <span class="rule-name">NoEmptyMethodRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows empty methods.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Empty methods hide missing behavior.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function handle(): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function handle(): void { $this-&gt;process(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoLongParameterListRule" data-search="nolongparameterlistrule method design ruleset node rule classmethod, function_ maxparams: 4">
+      <summary>
+        <span class="rule-name">NoLongParameterListRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxParams: 4</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Methods/functions must not exceed a parameter limit.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Long parameter lists are error-prone and hard to read.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function create(string $a, string $b, string $c, string $d, string $e): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function create(CreateUserInput $input): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxParams (default 4).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoConstructorWorkRule" data-search="noconstructorworkrule method design ruleset node rule classmethod maxlines: 10">
+      <summary>
+        <span class="rule-name">NoConstructorWorkRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxLines: 10</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Constructor bodies must not exceed a maximum line count.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Constructors should be lightweight and predictable.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">public function __construct() { $this-&gt;loadFromDb(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">public function __construct(private Repository $repo) {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxLines (default 10).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-MaxNestingDepthRule" data-search="maxnestingdepthrule method design ruleset node rule classmethod, function_ maxdepth: 3">
+      <summary>
+        <span class="rule-name">MaxNestingDepthRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxDepth: 3</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits the maximum nesting depth of control flow.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Deep nesting is hard to read and refactor.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($a) { if ($b) { if ($c) { doWork(); } } }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if (!$a || !$b || !$c) { return; }
+
+doWork();</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxDepth (default 3).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoNestedLoopsRule" data-search="nonestedloopsrule method design ruleset node rule classmethod, function_ maxdepth: 2">
+      <summary>
+        <span class="rule-name">NoNestedLoopsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxDepth: 2</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits loop nesting depth.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Nested loops hide complexity and make performance unclear.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">foreach ($a as $x) { foreach ($b as $y) { /* ... */ } }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">foreach ($a as $x) { process($x); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxDepth (default 2).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-MaxMethodStatementsRule" data-search="maxmethodstatementsrule method design ruleset node rule classmethod maxstatements: 12">
+      <summary>
+        <span class="rule-name">MaxMethodStatementsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxStatements: 12</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits the number of statements in a method.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Many statements usually indicate multiple responsibilities.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">// method contains too many statements</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">// extract blocks into smaller methods</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxStatements (default 12).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoBooleanParameterRule" data-search="nobooleanparameterrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoBooleanParameterRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows boolean parameters or boolean defaults.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Boolean flags make APIs ambiguous.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function save(bool $force): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function save(): void {}
+function forceSave(): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoOptionalParameterAfterRequiredRule" data-search="nooptionalparameterafterrequiredrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoOptionalParameterAfterRequiredRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows required parameters after optional parameters.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Required parameters after optional ones are confusing.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function add(string $name = &#x27;x&#x27;, int $count): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function add(string $name, int $count = 0): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoDefaultArrayParameterRule" data-search="nodefaultarrayparameterrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoDefaultArrayParameterRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows default array parameters.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Default arrays can hide missing arguments.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function add(array $items = []): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function add(?array $items = null): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoReferenceParameterRule" data-search="noreferenceparameterrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoReferenceParameterRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows by-reference parameters.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Reference parameters obscure data flow.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function add(int &amp;$count): void { $count++; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function add(int $count): int { return $count + 1; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoReturnNullRule" data-search="noreturnnullrule method design ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoReturnNullRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows returning null unless return type allows it.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Returning null without nullable types is misleading.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function find(): User { return null; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function find(): ?User { return null; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoThrowGenericExceptionRule" data-search="nothrowgenericexceptionrule method design ruleset node rule throw_ none">
+      <summary>
+        <span class="rule-name">NoThrowGenericExceptionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows throwing generic Exception/Throwable.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Throw_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Specific exceptions are easier to handle and reason about.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">throw new \Exception(&#x27;fail&#x27;);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">throw new DomainException(&#x27;fail&#x27;);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoCatchGenericExceptionRule" data-search="nocatchgenericexceptionrule method design ruleset node rule catch_ none">
+      <summary>
+        <span class="rule-name">NoCatchGenericExceptionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows catching generic Exception/Throwable.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Catch_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Catching generic exceptions hides the real error shape.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">catch (\Exception $e) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">catch (DomainException $e) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoNestedTryRule" data-search="nonestedtryrule method design ruleset node rule trycatch none">
+      <summary>
+        <span class="rule-name">NoNestedTryRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows nested try/catch blocks.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> TryCatch</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Nested try/catch blocks obscure error handling.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">try { try { doWork(); } catch (\Throwable $e) {} } catch (\Throwable $e) {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">try { doWork(); } catch (\Throwable $e) {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-RequireNamedConstructorRule" data-search="requirenamedconstructorrule method design ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">RequireNamedConstructorRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Classes with public constructors must include a named constructor.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Method Design Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Named constructors clarify intent and validation.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class User { public function __construct() {} }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User { private function __construct() {} public static function fromEmail(string $email): self { return new self(); } }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+<section class="ruleset" data-ruleset="NamingRuleset">
+  <h3>Naming Ruleset</h3>
+  <p class="ruleset-desc">Rules that keep names clear, consistent, and intention-revealing.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-InterfaceNamingRule" data-search="interfacenamingrule naming ruleset node rule interface_ none">
+      <summary>
+        <span class="rule-name">InterfaceNamingRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Interfaces must use the Contract suffix.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Interface_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Contract suffix makes interfaces explicit.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">interface Renderer {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">interface RendererContract {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-TraitNamingRule" data-search="traitnamingrule naming ruleset node rule trait_ none">
+      <summary>
+        <span class="rule-name">TraitNamingRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Traits must use the Has prefix.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Trait_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Has prefix signals capabilities clearly.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">trait Timestamped {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">trait HasTimestamps {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoAbbreviationRule" data-search="noabbreviationrule naming ruleset node rule class_, property, classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoAbbreviationRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows common abbreviations in names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_, Property, ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Abbreviations reduce clarity and hurt searchability.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class UserSvc {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoNegativeBooleanNameRule" data-search="nonegativebooleannamerule naming ruleset node rule classmethod, function_ none">
+      <summary>
+        <span class="rule-name">NoNegativeBooleanNameRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows negative boolean method names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Negative boolean names are hard to reason about.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function isNotReady(): bool { return true; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function isReady(): bool { return true; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoPrefixHungarianRule" data-search="noprefixhungarianrule naming ruleset node rule classmethod, function_, property none">
+      <summary>
+        <span class="rule-name">NoPrefixHungarianRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows Hungarian-style prefixes.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> ClassMethod, Function_, Property</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Hungarian prefixes are noisy and redundant.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">function save(string $str_name): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">function save(string $name): void {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoSuffixImplRule" data-search="nosuffiximplrule naming ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">NoSuffixImplRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows Impl suffix on class names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Impl suffix adds noise and hides the real intent.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class CacheImpl {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class Cache {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoManagerSuffixRule" data-search="nomanagersuffixrule naming ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">NoManagerSuffixRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows Manager/Helper/Util suffixes.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Manager/Helper/Util are vague and unhelpful.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class UserManager {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class UserService {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoPluralClassNameRule" data-search="nopluralclassnamerule naming ruleset node rule class_ none">
+      <summary>
+        <span class="rule-name">NoPluralClassNameRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows plural class names.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Class_</div>
+          <div><strong>Ruleset:</strong> Naming Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Singular class names read more clearly.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">final class Users {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">final class User {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+<section class="ruleset" data-ruleset="ExpressionRuleset">
+  <h3>Expression Ruleset</h3>
+  <p class="ruleset-desc">Rules that simplify control flow and keep expressions readable.</p>
+  <div class="rule-grid">
+
+    <details class="rule-card" id="rule-NoNestedTernaryRule" data-search="nonestedternaryrule expression ruleset node rule ternary none">
+      <summary>
+        <span class="rule-name">NoNestedTernaryRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows nested ternary expressions.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Ternary</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Nested ternaries are hard to parse and error-prone.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">$value = $a ? ($b ? 1 : 2) : 3;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if ($a) { $value = $b ? 1 : 2; } else { $value = 3; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoDeepBooleanExpressionRule" data-search="nodeepbooleanexpressionrule expression ruleset node rule if_, while_, for_ maxconditions: 3">
+      <summary>
+        <span class="rule-name">NoDeepBooleanExpressionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxConditions: 3</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits the number of boolean conditions in a single expression.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> If_, While_, For_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Deep boolean expressions are hard to read.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($a &amp;&amp; $b &amp;&amp; $c &amp;&amp; $d) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if (!$a || !$b || !$c || !$d) { return; }
+
+doWork();</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxConditions (default 3).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoElseAfterReturnRule" data-search="noelseafterreturnrule expression ruleset node rule if_ none">
+      <summary>
+        <span class="rule-name">NoElseAfterReturnRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows else blocks following a return/throw.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> If_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Early returns reduce nesting.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($ok) { return 1; } else { return 0; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if ($ok) { return 1; }
+return 0;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoEmptyCatchRule" data-search="noemptycatchrule expression ruleset node rule catch_ none">
+      <summary>
+        <span class="rule-name">NoEmptyCatchRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows empty catch blocks.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Catch_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Empty catches hide errors and make failures silent.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">try { doWork(); } catch (\Throwable $e) {}</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">try { doWork(); } catch (\Throwable $e) { report($e); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoSwitchFallthroughRule" data-search="noswitchfallthroughrule expression ruleset node rule switch_ none">
+      <summary>
+        <span class="rule-name">NoSwitchFallthroughRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Switch cases must end with break/return/throw/continue.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Switch_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Fallthrough is often accidental and hard to spot.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">switch ($x) { case 1: doWork(); case 2: doMore(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">switch ($x) { case 1: doWork(); break; case 2: doMore(); break; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoBreakInFinallyRule" data-search="nobreakinfinallyrule expression ruleset node rule trycatch none">
+      <summary>
+        <span class="rule-name">NoBreakInFinallyRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows break/continue/return in finally blocks.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> TryCatch</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Control flow exits in finally blocks are confusing.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">try { doWork(); } finally { break; }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">try { doWork(); } finally { cleanup(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoEchoRule" data-search="noechorule expression ruleset node rule echo_ none">
+      <summary>
+        <span class="rule-name">NoEchoRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows echo statements.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Echo_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Libraries should not write directly to stdout.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">echo &#x27;done&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">$logger-&gt;info(&#x27;done&#x27;);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoExitRule" data-search="noexitrule expression ruleset node rule exit_ none">
+      <summary>
+        <span class="rule-name">NoExitRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows exit/die calls.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Exit_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Exiting bypasses calling code and tests.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">exit(1);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">throw new RuntimeException(&#x27;failed&#x27;);</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoYodaConditionsRule" data-search="noyodaconditionsrule expression ruleset node rule equal, notequal, identical, notidentical, smaller, smallerorequal, greater, greaterorequal none">
+      <summary>
+        <span class="rule-name">NoYodaConditionsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows Yoda conditions with literals on the left.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Equal, NotEqual, Identical, NotIdentical, Smaller, SmallerOrEqual, Greater, GreaterOrEqual</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Yoda conditions are harder to read.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if (10 === $count) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if ($count === 10) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoImplicitTernaryRule" data-search="noimplicitternaryrule expression ruleset node rule ternary none">
+      <summary>
+        <span class="rule-name">NoImplicitTernaryRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows the shorthand ternary operator.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Ternary</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Implicit ternaries are ambiguous in intent.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">$name = $user ?: &#x27;guest&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">$name = $user !== null ? $user : &#x27;guest&#x27;;</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoComplexConditionRule" data-search="nocomplexconditionrule expression ruleset node rule if_, while_, for_ none">
+      <summary>
+        <span class="rule-name">NoComplexConditionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows mixing &amp;&amp; and || in a single condition.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> If_, While_, For_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Mixed boolean operators are easy to misread.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($a &amp;&amp; $b || $c) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">$ready = $a &amp;&amp; $b;
+if ($ready || $c) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoChainMethodCallsRule" data-search="nochainmethodcallsrule expression ruleset node rule methodcall maxchain: 5">
+      <summary>
+        <span class="rule-name">NoChainMethodCallsRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: maxChain: 5</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Limits method call chain depth.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> MethodCall</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Deep call chains are hard to debug.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">$result = $a-&gt;b()-&gt;c()-&gt;d()-&gt;e()-&gt;f();</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">$builder = $a-&gt;b()-&gt;c();
+$result = $builder-&gt;d();</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>maxChain (default 5).</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoAssignmentInConditionRule" data-search="noassignmentinconditionrule expression ruleset node rule if_, while_, for_ none">
+      <summary>
+        <span class="rule-name">NoAssignmentInConditionRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows assignments in if/while/for conditions.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> If_, While_, For_</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Assignments inside conditions are easy to miss.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($count = $repo-&gt;count()) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">$count = $repo-&gt;count();
+if ($count) { doWork(); }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+
+    <details class="rule-card" id="rule-NoMagicStringRule" data-search="nomagicstringrule expression ruleset node rule equal, notequal, identical, notidentical, case_, matcharm none">
+      <summary>
+        <span class="rule-name">NoMagicStringRule</span>
+        <span class="rule-tags">
+          <span class="tag">Node Rule</span>
+          <span class="tag">Default: None</span>
+        </span>
+      </summary>
+      <div class="rule-body">
+        <p class="rule-desc">Disallows string literals in comparisons and switch/match arms.</p>
+        <div class="rule-meta">
+          <div><strong>Applies to:</strong> Equal, NotEqual, Identical, NotIdentical, Case_, MatchArm</div>
+          <div><strong>Ruleset:</strong> Expression Ruleset</div>
+        </div>
+        <div class="rule-section">
+          <h4>Why This Matters</h4>
+          <p>Constants communicate intent and reduce typos.</p>
+        </div>
+        <div class="rule-section">
+          <h4>Bad Example</h4>
+          <pre><code class="language-php">if ($status === &#x27;paid&#x27;) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Good Example</h4>
+          <pre><code class="language-php">if ($status === Status::PAID) { /* ... */ }</code></pre>
+        </div>
+        <div class="rule-section">
+          <h4>Configuration</h4>
+          <p>None.</p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+        </section>
+
+        <section id="suppression">
+          <h2>Suppression</h2>
+          <p>Use the <code>#[Suppress]</code> attribute to suppress rules at class, method, or property scope. Inline suppression uses <code>// @readalizer-suppress</code> with either short names or fully qualified rule classes.</p>
+          <pre><code class="language-php">use Readalizer\Readalizer\Attributes\Suppress;
+use Readalizer\Readalizer\Rules\NoLongMethodsRule;
+
+#[Suppress(NoLongMethodsRule::class)]
+final class LegacyService
+{
+    // ...
+}
+
+// @readalizer-suppress NoLongMethodsRule
+function legacy(): void
+{
+    // ...
+}
+
+// @readalizer-suppress
+// suppress all rules for the current line and following lines
+</code></pre>
+        </section>
+
+        <section id="parallel">
+          <h2>Parallel Execution</h2>
+          <p>Set <code>--jobs</code> above 1 to enable worker processes. Readalizer splits files into chunks, runs workers in <code>--_worker</code> mode, and merges violation output in the parent process.</p>
+          <div class="key-value">
+            <div><strong>Security</strong> — Worker mode requires <code>READALIZER_INTERNAL=1</code> and a matching token.</div>
+            <div><strong>Resource caps</strong> — CPU usage is capped at 50% of logical cores, and memory is split across workers.</div>
+            <div><strong>Progress</strong> — Workers write newline ticks that power the progress bar.</div>
+          </div>
+        </section>
+
+        <section id="architecture">
+          <h2>Architecture</h2>
+          <p>High-level flow:</p>
+          <div class="key-value">
+            <div><strong>Application</strong> reads CLI input and dispatches commands.</div>
+            <div><strong>AnalyseCommand</strong> builds an <code>AnalyseCommandContext</code> with config, rules, and paths.</div>
+            <div><strong>Analyser</strong> parses files to AST nodes and applies rule collections.</div>
+            <div><strong>ParallelRunner</strong> spawns workers when <code>--jobs</code> is set.</div>
+            <div><strong>Formatter</strong> renders output (TextFormatter today).</div>
+          </div>
+        </section>
+
+        <section id="troubleshooting">
+          <h2>Troubleshooting</h2>
+          <div class="key-value">
+            <div><strong>No progress output</strong> — Ensure <code>--no-progress</code> is not set and your terminal supports ANSI.</div>
+            <div><strong>Workers hang</strong> — Increase <code>--worker-timeout</code>, reduce <code>--jobs</code>, and check system limits.</div>
+            <div><strong>Memory exhaustion</strong> — Reduce <code>--jobs</code>, raise <code>--memory-limit</code>, or exclude large directories.</div>
+            <div><strong>JSON output</strong> — <code>--format=json</code> is parsed but not wired to <code>JsonFormatter</code> yet.</div>
+          </div>
+        </section>
+
+        <section id="development">
+          <h2>Development</h2>
+          <p>Requirements: PHP 8.1+ and Composer. Install dependencies and create a local config file:</p>
+          <pre><code class="language-bash">composer install
+vendor/bin/readalizer --init
+vendor/bin/readalizer src</code></pre>
+          <p>There is no automated test suite. Validate changes by running Readalizer against this repo and a large external codebase.</p>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
