@@ -1,35 +1,40 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Readalizer Documentation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Space+Grotesk:wght@500;600;700&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <div class="page">
     <header class="hero" id="overview">
       <div class="hero-content">
         <p class="eyebrow">Readalizer Documentation</p>
         <h1>Readable PHP, enforced.</h1>
-        <p class="lead">Readalizer is a PHP static analysis tool that enforces readability standards via AST analysis. Configure your rules, run the CLI, and get actionable violations with consistent formatting.</p>
+        <p class="lead">Readalizer is a PHP static analysis tool that enforces readability standards via AST analysis.
+          Configure your rules, run the CLI, and get actionable violations with consistent formatting.</p>
         <div class="hero-actions">
           <a class="button primary" href="#getting-started">Get Started</a>
           <a class="button secondary" href="#rules">Browse Rules</a>
         </div>
         <div class="hero-meta">
-          <div><strong>Current release:</strong> 1.0.0 (2026-02-22)</div>
+          <div><strong>Current release:</strong> 1.0.1 (2026-02-23)</div>
           <div><strong>PHP:</strong> 8.1+</div>
           <div><strong>Config file:</strong> <code>readalizer.php</code></div>
         </div>
       </div>
       <div class="hero-panel">
         <pre><code class="language-bash">composer require readalizer/readalizer
-vendor/bin/readalizer --init
-vendor/bin/readalizer src/</code></pre>
+            vendor/bin/readalizer --init
+            vendor/bin/readalizer src/</code></pre>
         <div class="panel-note">CLI uses <code>readalizer.php</code> when no paths are provided.</div>
       </div>
     </header>
@@ -54,21 +59,24 @@ vendor/bin/readalizer src/</code></pre>
       <main>
         <section id="getting-started">
           <h2>Getting Started</h2>
-          <p>Readalizer scans PHP source files, parses them into an AST, and runs configured readability rules. The CLI exits with <code>1</code> when violations are found, so it works cleanly in CI or git hooks.</p>
+          <p>Readalizer scans PHP source files, parses them into an AST, and runs configured readability rules. The CLI
+            exits with <code>1</code> when violations are found, so it works cleanly in CI or git hooks.</p>
         </section>
 
         <section id="installation">
           <h2>Installation</h2>
           <pre><code class="language-bash">composer require readalizer/readalizer</code></pre>
-          <p>Readalizer is distributed as a Composer package. The CLI entrypoint is <code>vendor/bin/readalizer</code>.</p>
+          <p>Readalizer is distributed as a Composer package. The CLI entrypoint is <code>vendor/bin/readalizer</code>.
+          </p>
         </section>
 
         <section id="quick-start">
           <h2>Quick Start</h2>
           <pre><code class="language-bash">vendor/bin/readalizer --init
-vendor/bin/readalizer
-vendor/bin/readalizer src/ lib/</code></pre>
-          <p>When no paths are provided, Readalizer uses the <code>paths</code> array from <code>readalizer.php</code>. Use <code>--init</code> to generate the config scaffold.</p>
+              vendor/bin/readalizer
+              vendor/bin/readalizer src/ lib/</code></pre>
+          <p>When no paths are provided, Readalizer uses the <code>paths</code> array from <code>readalizer.php</code>.
+            Use <code>--init</code> to generate the config scaffold.</p>
           <pre><code class="language-bash">vendor/bin/readalizer --init</code></pre>
         </section>
 
@@ -76,21 +84,26 @@ vendor/bin/readalizer src/ lib/</code></pre>
           <h2>CLI</h2>
           <p>Primary options wired into runtime behavior:</p>
           <pre><code class="language-bash">vendor/bin/readalizer --config=path/to/readalizer.php
-vendor/bin/readalizer --jobs=4 --memory-limit=2G
-vendor/bin/readalizer --progress
-vendor/bin/readalizer --debug</code></pre>
+              vendor/bin/readalizer --jobs=4 --memory-limit=2G
+              vendor/bin/readalizer --progress
+              vendor/bin/readalizer --debug</code></pre>
           <p>Exit codes:</p>
           <div class="key-value">
             <div><strong>0</strong> — No violations</div>
             <div><strong>1</strong> — Violations detected</div>
           </div>
-          <p>The CLI help lists additional options (<code>--format</code>, <code>--cache</code>, <code>--baseline</code>, <code>--max-violations</code>) that are parsed but not yet enforced in runtime. If you plan to implement them, start in <code>src/Command/AnalyseCommand.php</code>, <code>src/Config/ConfigurationLoader.php</code>, and <code>src/Analysis/Analyser.php</code>.</p>
+          <p>The CLI help lists additional options (<code>--format</code>, <code>--cache</code>,
+            <code>--baseline</code>, <code>--max-violations</code>) that are parsed but not yet enforced in runtime. If
+            you plan to implement them, start in <code>src/Command/AnalyseCommand.php</code>,
+            <code>src/Config/ConfigurationLoader.php</code>, and <code>src/Analysis/Analyser.php</code>.</p>
         </section>
 
         <section id="configuration">
           <h2>Configuration</h2>
-          <p>Readalizer loads configuration from a PHP file that returns an array. Use <code>--config</code> to point to a different file.</p>
-          <pre><code class="language-php"><?php
+          <p>Readalizer loads configuration from a PHP file that returns an array. Use <code>--config</code> to point to
+            a different file.</p>
+          <pre><code class="language-php">
+              <?php
 
 use Readalizer\Readalizer\Rules\NoLongMethodsRule;
 use Readalizer\Readalizer\Rulesets\DefaultRuleset;
