@@ -84,6 +84,10 @@
           <h2>CLI</h2>
           <p>Primary options wired into runtime behavior:</p>
           <pre><code class="language-bash">vendor/bin/readalizer --config=path/to/readalizer.php
+              vendor/bin/readalizer --format=json --output=report.json src/
+              vendor/bin/readalizer --baseline=.readalizer-baseline.json --max-violations=100
+              vendor/bin/readalizer --generate-baseline=.readalizer-baseline.json src/
+              vendor/bin/readalizer --cache --jobs=4
               vendor/bin/readalizer --jobs=4 --memory-limit=2G
               vendor/bin/readalizer --progress
               vendor/bin/readalizer --debug</code></pre>
@@ -92,11 +96,14 @@
             <div><strong>0</strong> — No violations</div>
             <div><strong>1</strong> — Violations detected</div>
           </div>
-          <p>The CLI help lists additional options (<code>--format</code>, <code>--cache</code>,
-            <code>--baseline</code>, <code>--max-violations</code>) that are parsed but not yet enforced in runtime. If
-            you plan to implement them, start in <code>src/Command/AnalyseCommand.php</code>,
-            <code>src/Config/ConfigurationLoader.php</code>, and <code>src/Analysis/Analyser.php</code>.
-          </p>
+          <div class="key-value">
+            <div><strong>format</strong> — <code>--format=text|json</code> switches formatter output. JSON writes timing to stderr so stdout stays valid JSON.</div>
+            <div><strong>output</strong> — <code>--output=&lt;file&gt;</code> writes the formatted report to a file.</div>
+            <div><strong>baseline</strong> — <code>--baseline=&lt;file&gt;</code> suppresses matching violations from a baseline JSON file.</div>
+            <div><strong>generate baseline</strong> — <code>--generate-baseline=&lt;file&gt;</code> writes the current violations as baseline JSON.</div>
+            <div><strong>max violations</strong> — <code>--max-violations=&lt;n&gt;</code> stops collection after <code>n</code> visible violations (<code>0</code> = unlimited).</div>
+            <div><strong>cache</strong> — <code>--cache</code> / <code>--no-cache</code> enable or disable the on-disk per-file result cache.</div>
+          </div>
         </section>
 
         <section id="configuration">
@@ -172,11 +179,16 @@ return [
             <div><strong>rules</strong> — Rule instances applied directly.</div>
             <div><strong>ruleset</strong> — Ruleset bundles expanded into rules.</div>
             <div><strong>memory_limit</strong> — Default memory limit, overridden by <code>--memory-limit</code>.</div>
-            <div><strong>cache</strong>, <strong>baseline</strong>, <strong>max_violations</strong> — Optional keys parsed by config; <code>cache</code>/<code>baseline</code>/<code>max_violations</code> are not yet enforced in runtime.</div>
+            <div><strong>cache</strong> — Optional on-disk cache config (<code>enabled</code>, <code>path</code>).</div>
+            <div><strong>baseline</strong> — Optional baseline JSON path used to suppress matching violations.</div>
+            <div><strong>max_violations</strong> — Optional max visible violations to collect before stopping (<code>0</code> = unlimited).</div>
           </div>
           <div class="key-value">
             <div><strong>Precedence</strong> — CLI paths override <code>paths</code> in config.</div>
             <div><strong>Precedence</strong> — <code>--memory-limit</code> overrides <code>memory_limit</code>.</div>
+            <div><strong>Precedence</strong> — <code>--baseline</code> overrides <code>baseline</code>.</div>
+            <div><strong>Precedence</strong> — <code>--max-violations</code> overrides <code>max_violations</code>.</div>
+            <div><strong>Precedence</strong> — <code>--cache</code> / <code>--no-cache</code> override <code>cache.enabled</code>.</div>
             <div><strong>Precedence</strong> — <code>--config</code> overrides the default config file location.</div>
           </div>
         </section>
@@ -3863,7 +3875,7 @@ function legacy(): void
             <div><strong>AnalyseCommand</strong> builds an <code>AnalyseCommandContext</code> with config, rules, and paths.</div>
             <div><strong>Analyser</strong> parses files to AST nodes and applies rule collections.</div>
             <div><strong>ParallelRunner</strong> spawns workers when <code>--jobs</code> is set.</div>
-            <div><strong>Formatter</strong> renders output (TextFormatter today).</div>
+            <div><strong>Formatter</strong> renders output via text or JSON formatters, and can write to stdout or an output file.</div>
           </div>
         </section>
 
@@ -3873,7 +3885,8 @@ function legacy(): void
             <div><strong>No progress output</strong> — Ensure <code>--no-progress</code> is not set and your terminal supports ANSI.</div>
             <div><strong>Workers hang</strong> — Increase <code>--worker-timeout</code>, reduce <code>--jobs</code>, and check system limits.</div>
             <div><strong>Memory exhaustion</strong> — Reduce <code>--jobs</code>, raise <code>--memory-limit</code>, or exclude large directories.</div>
-            <div><strong>JSON output</strong> — <code>--format=json</code> is parsed but not wired to <code>JsonFormatter</code> yet.</div>
+            <div><strong>JSON output</strong> — <code>--format=json</code> writes JSON to stdout; timing is written to stderr.</div>
+            <div><strong>Baseline file errors</strong> — Verify the baseline path exists and contains valid JSON with a <code>violations</code> array.</div>
           </div>
         </section>
 
